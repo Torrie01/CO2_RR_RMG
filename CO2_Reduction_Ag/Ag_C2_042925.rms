@@ -4285,6 +4285,55 @@ Phases:
     type: Species
   name: surface
 Reactions:
+- comment: 'Volmer. Made up by Richard. Placeholder with garbage kinetics'
+  electronchange: 1
+  kinetics:
+    A: 25e9
+    Ea: 10e3
+    n: 0.0
+    q: 0.25
+    type: Arrheniusq
+  products:
+  - HX
+  radicalchange: 0
+  reactants:
+  - proton
+  - vacantX
+  type: ElementaryReaction
+- comment: 'Heyrovsky. Made up by Richard.  Placeholder with garbage kinetics'
+  electronchange: 1
+  kinetics:
+    A: 25e9
+    Ea: 10e3
+    n: 0.0
+    q: 0.25
+    type: Arrheniusq
+  products:
+  - H2
+  - vacantX
+  radicalchange: 0
+  reactants:
+  - HX
+  - proton
+  type: ElementaryReaction
+- comment: 'Tafel. Made up by Richard.  Placeholder with garbage kinetics.
+    The forward direction (as written here) is dissociative adsorption of H2,
+    the rate being defined with a sticking coefficient.'
+  electronchange: 0
+  kinetics:
+    A: 0.02
+    Ea: 100e3
+    n: 0.0
+    type: StickingCoefficient
+  products:
+  - HX
+  - HX
+  radicalchange: 0
+  reactants:
+  - vacantX
+  - vacantX
+  - H2
+  type: ElementaryReaction
 - comment: ''
   electronchange: 0
   kinetics:
