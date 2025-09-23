@@ -4285,6 +4285,37 @@ Phases:
     type: Species
   name: surface
 Reactions:
+- comment: 'Volmer. Made up by Richard. Placeholder with garbage kinetics'
+  electronchange: 1
+  kinetics:
+    A: 25e9
+    Ea: 96485.0
+    n: 0.0
+    q: 0.25
+    type: Arrheniusq
+  products:
+  - HX
+  radicalchange: 0
+  reactants:
+  - proton
+  - vacantX
+  type: ElementaryReaction
+- comment: 'Heyrovsky. Made up by Richard.  Placeholder with garbage kinetics'
+  electronchange: 1
+  kinetics:
+    A: 25e9
+    Ea: 96485.0
+    n: 0.0
+    q: 0.25
+    type: Arrheniusq
+  products:
+  - H2
+  - vacantX
+  radicalchange: 0
+  reactants:
+  - HX
+  - proton
+  type: ElementaryReaction
 - comment: ''
   electronchange: 0
   kinetics:
@@ -4337,13 +4368,15 @@ Reactions:
 
     family: Surface_Proton_Electron_Reduction_Beta_vdW
 
-    Ea raised from 50.0 to 85.3 kJ/mol to match endothermicity of reaction.'
+    Ea raised from 50.0 to 85.3 kJ/mol to match endothermicity of reaction.
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 250000000000000.0
-    Ea: 62276.629849940306
+    Ea: 120606.25
     n: 0.0
-    q: 0.25
+    q: 0.46
     type: Arrheniusq
   products:
   - CHO2X
@@ -4358,13 +4391,15 @@ Reactions:
 
     Euclidian distance = 0
 
-    family: Surface_Proton_Electron_Reduction_Beta_vdW'
+    family: Surface_Proton_Electron_Reduction_Beta_vdW
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 75249.98822394571
+    Ea: 72363.75
     n: 0.0
-    q: 0.5
+    q: 0.62
     type: Arrheniusq
   products:
   - CO2HX
@@ -4383,9 +4418,9 @@ Reactions:
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 3012.3559299445205
+    Ea: 254720.4
     n: 0.0
-    q: 0.5
+    q: 0.12
     type: Arrheniusq
   products:
   - CH2O2X
@@ -4400,13 +4435,15 @@ Reactions:
 
     Euclidian distance = 0
 
-    family: Surface_Proton_Electron_Reduction_Alpha_vdW'
+    family: Surface_Proton_Electron_Reduction_Alpha_vdW
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 48898.20910952611
+    Ea: 231564.0
     n: 0.0
-    q: 0.5
+    q: 0.62
     type: Arrheniusq
   products:
   - CH2O2X
@@ -4419,13 +4456,15 @@ Reactions:
 
     Euclidian distance = 1.0
 
-    family: Surface_Proton_Electron_Reduction_Alpha'
+    family: Surface_Proton_Electron_Reduction_Alpha
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 34575.95926752735
+    Ea: 43418.25
     n: 0.0
-    q: 0.5
+    q: 0.49
     type: Arrheniusq
   products:
   - CHOX
@@ -4440,13 +4479,15 @@ Reactions:
 
     Euclidian distance = 0
 
-    family: Surface_Proton_Electron_Reduction_Alpha_vdW'
+    family: Surface_Proton_Electron_Reduction_Alpha_vdW
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 54779.82771855402
+    Ea: 250861.0
     n: 0.0
-    q: 0.5
+    q: 0.36
     type: Arrheniusq
   products:
   - CH2OX
@@ -5657,13 +5698,15 @@ Reactions:
 
     family: Surface_Proton_Electron_Reduction_Beta_Dissociation
 
-    Ea raised from 20.0 to 22.7 kJ/mol to match endothermicity of reaction.'
+    Ea raised from 20.0 to 22.7 kJ/mol to match endothermicity of reaction.
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 22584.872508307497
+    Ea: 24121.25
     n: 0.0
-    q: 0.25
+    q: 0.36
     type: Arrheniusq
   products:
   - H2O
@@ -9653,13 +9696,15 @@ Reactions:
 
     family: Surface_Proton_Electron_Reduction_Beta
 
-    Ea raised from 50.0 to 99.5 kJ/mol to match endothermicity of reaction.'
+    Ea raised from 50.0 to 99.5 kJ/mol to match endothermicity of reaction.
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 53014.94467580053
+    Ea: 206477.9
     n: 0.0
-    q: 0.5
+    q: 0.714
     type: Arrheniusq
   products:
   - OC=[Pt]
@@ -13933,13 +13978,15 @@ Reactions:
 
     family: Surface_Proton_Electron_Reduction_Beta_Dissociation
 
-    Ea raised from 20.0 to 76.2 kJ/mol to match endothermicity of reaction.'
+    Ea raised from 20.0 to 76.2 kJ/mol to match endothermicity of reaction.
+
+    Ea and q taken from DFT calculations'
   electronchange: 1
   kinetics:
     A: 25000000000.0
-    Ea: 61450.96167497763
+    Ea: 76223.15
     n: 0.0
-    q: 0.25
+    q: 0.18
     type: Arrheniusq
   products:
   - H2O
