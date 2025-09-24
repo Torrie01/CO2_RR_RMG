@@ -4285,13 +4285,18 @@ Phases:
     type: Species
   name: surface
 Reactions:
-- comment: 'Volmer. Made up by Richard. Placeholder with garbage kinetics'
+- comment: 'Volmer. Made up by Richard.
+A = kB / h /  concentration to get units right.
+n = 1 so that overall the A = k_B * T / H
+Ea = 0.8 eV for Cu or 1.0 eV from Figure 1a of Yang 2024
+assume DeltaS+ = 0
+q = 0.5'
   electronchange: 1
   kinetics:
     A: 25e9
     Ea: 96485.0
-    n: 0.0
-    q: 0.25
+    n: 1.0
+    q: 0.5
     type: Arrheniusq
   products:
   - HX
@@ -4305,8 +4310,8 @@ Reactions:
   kinetics:
     A: 25e9
     Ea: 96485.0
-    n: 0.0
-    q: 0.25
+    n: 1.0
+    q: 0.5
     type: Arrheniusq
   products:
   - H2
