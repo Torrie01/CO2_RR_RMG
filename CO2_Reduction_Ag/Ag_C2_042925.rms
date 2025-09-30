@@ -4293,7 +4293,7 @@ assume DeltaS+ = 0
 q = 0.5'
   electronchange: 1
   kinetics:
-    A: 25e9
+    A: 1e13
     Ea: 96485.0
     n: 1.0
     q: 0.5
@@ -4308,10 +4308,10 @@ q = 0.5'
 - comment: 'Heyrovsky. Made up by Richard.  Placeholder with garbage kinetics'
   electronchange: 1
   kinetics:
-    A: 25e9
+    A: 1e13
     Ea: 96485.0
     n: 1.0
-    q: 0.5
+    q: -0.5
     type: Arrheniusq
   products:
   - H2
