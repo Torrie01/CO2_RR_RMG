@@ -4294,9 +4294,10 @@ q = 0.5'
   electronchange: 1
   kinetics:
     A: 1e13
-    Ea: 96485.0
+    Ea: 103789.0
     n: 1.0
     q: 0.5
+    V0: -0.559
     type: Arrheniusq
   products:
   - HX
@@ -4305,13 +4306,19 @@ q = 0.5'
   - proton
   - vacantX
   type: ElementaryReaction
-- comment: 'Heyrovsky. Made up by Richard.  Placeholder with garbage kinetics'
+- comment: 'Heyrovsky. Made up by Richard.
+A = kB / h /  concentration to get units right.
+n = 1 so that overall the A = k_B * T / H
+Ea = 0.8 eV for Cu or 1.0 eV from Figure 1a of Yang 2024
+assume DeltaS+ = 0
+q = 0.5'
   electronchange: 1
   kinetics:
     A: 1e13
-    Ea: 96485.0
+    Ea: 103789.0
     n: 1.0
-    q: -0.5
+    q: 0.5
+    V0: 0.559
     type: Arrheniusq
   products:
   - H2
