@@ -1,3 +1,7 @@
+.ipynb_checkpoints
+**/species/*.png
+*:Zone.Identifier
+
 CO2RR_RMS/Cu/CO2RR_Cu.ipynb
 CO2RR_RMS/Ag/CO2RR_RMS.ipynb
 CO2RR_RMS/Ag/CO2RR_RMS_Diffusion_Interface.ipynb
