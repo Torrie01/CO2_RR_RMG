@@ -25,370 +25,300 @@ using DifferentialEquations
 using Sundials
 using SciMLBase
 using QuadGK
+using DataFrames
 using GlobalSensitivity
 using Random
+using Statistics
 
-# %%
-outdict = readinput("/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms")
+function run_co2_reduction_simulation(params::Vector{Float64})
+	try
+		CO2_M = params[1]
+		pH = params[2]
+		surface_phi = params[3]
 
-# %%
-boundarylayerspcs = outdict["gas"]["Species"]
-boundarylayerrxns = outdict["gas"]["Reactions"]
-surfspcs = outdict["surface"]["Species"]
-surfrxns = outdict["surface"]["Reactions"]
-interfacerxns = outdict[Set(["surface", "gas"])]["Reactions"]
-solv = outdict["Solvents"][1];
+		rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
 
-# %%
-sitedensity = 2.292e-5; # Ag111 site density is 2.294e-9 mol/cm^2 or 2.294e-5 mol/m^2
-boundarylayer = IdealDiluteSolution(boundarylayerspcs,boundarylayerrxns,solv,name="boundarylayeruid",diffusionlimited=true);
-surf = IdealSurface(surfspcs,surfrxns,sitedensity,name="surface");
+		outdict = readinput(rms_file)
+		boundarylayerspcs = outdict["gas"]["Species"]
+		boundarylayerrxns = outdict["gas"]["Reactions"]
+		surfspcs = outdict["surface"]["Species"]
+		surfrxns = outdict["surface"]["Reactions"]
+		interfacerxns = outdict[Set(["surface", "gas"])]["Reactions"]
+		solv = outdict["Solvents"][1]
 
-# %%
-# PARAMETER BOUNDS
-lb = [4.0,   0.01, -1.614, 1e-7]   # pH, CO2, potential, layer thickness
-ub = [9.0,   10.0, -0.514, 5e-5]
-bounds = hcat(lb, ub)
+		sitedensity = 2.292e-5; #Ag111
+		boundarylayer = IdealDiluteSolution(boundarylayerspcs, boundarylayerrxns, solv,
+			name = "boundarylayeruid", diffusionlimited = true)
+		surf = IdealSurface(surfspcs, surfrxns, sitedensity, name = "surface")
 
-param_labels = ["pH", "CO₂ (mol/m3)", "Potential (V)", "Layer thickness (m)"]
-
-# MODEL FOR GLOBAL SENSITIVITY — RETURNS FORMATE
-function run_formate_model(p)
-    pH      = p[1]
-    CO2_M   = p[2]
-    phi_val = p[3]
-    layer_thickness = p[4]
 
     C_proton = 10.0^(-pH) * 1e3         # mol/m³
     C_co2    = CO2_M * 1e3              # mol/m³
     C_default = 1e-12
     V_res   = 1e3
+		layer_thickness = 1e-6;
     AVratio = 36.0
     A_surf  = V_res * AVratio
     V_bl    = A_surf * layer_thickness
     sites   = sitedensity * A_surf
+		
 
+		initialcondsboundarylayer = Dict([
+			"proton" => C_proton * V_bl,
+			"CO2" => C_co2 * V_bl,
+			"V" => V_bl,
+			"T" => 300,
+			"Phi" => 0.0,
+			"d" => 0.0,
+		])
 
-    initialcondsboundarylayer = Dict(
-        "proton" => C_proton * V_bl,
-        "CO2"    => C_co2 * V_bl,
-        "V"      => V_bl,
-        "T"      => 300.0,
-        "Phi"    => 0.0,
-        "d"      => 0.0
-    )
+		initialcondsreservoir = Dict([
+			"proton" => C_proton,
+			"CO2" => C_co2,
+			"V" => V_res,
+			"T" => 300,
+		])
 
-    initialcondsreservoir = Dict(
-        "proton" => C_proton,
-        "CO2"    => C_co2,
-        "V"      => V_res,
-        "T"      => 300.0
-    )
+		initialcondssurf = Dict([
+			"CO2X" => 0.6 * sites,
+			"vacantX" => 0.4 * sites,
+			"A" => A_surf,
+			"T" => 300,
+			"Phi" => surface_phi,
+		])
 
-    initialcondssurf = Dict(
-        "CO2X"    => 0.1 * sites,
-        "vacantX" => 0.9 * sites,
-        "A"       => A_surf,
-        "T"       => 300.0,
-        "Phi"     => phi_val
-    )
+		domainboundarylayer, y0boundarylayer, pboundarylayer = ConstantTVDomain(
+			phase = boundarylayer, initialconds = initialcondsboundarylayer)
+		domaincat, y0cat, pcat = ConstantTAPhiDomain(
+			phase = surf, initialconds = initialcondssurf)
 
+		inter, pinter = ReactiveInternalInterfaceConstantTPhi(
+			domainboundarylayer, domaincat, interfacerxns, 298.15, A_surf)
+		diffusionlayer = ConstantReservoirDiffusion(
+			domainboundarylayer, initialcondsreservoir, A_surf, layer_thickness)
+		interfaces = [inter, diffusionlayer]
 
-    domainboundarylayer, y0boundarylayer, pboundarylayer =
-        ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
+		@time react, y0, p = Reactor((domainboundarylayer, domaincat),
+			(y0boundarylayer, y0cat),
+			(0.0, 1e3),
+			interfaces,
+			(pboundarylayer, pcat, pinter))
 
-    domaincat, y0cat, pcat =
-        ConstantTAPhiDomain(phase=surf, initialconds=initialcondssurf)
+		@time sol = solve(react.ode, Sundials.CVODE_BDF(), abstol = 1e-20, reltol = 1e-8)
 
-    domainboundarylayer.diffusivity[6] = 0.932e-8
+		if sol.retcode != :Success
+			return [1e-15, 1e-15, 0.001, 0]
+		end
 
-    inter, pinter = ReactiveInternalInterfaceConstantTPhi(
-        domainboundarylayer, domaincat, interfacerxns, 298.15, A_surf
-    )
+		ssys = SystemSimulation(sol, (domainboundarylayer, domaincat), interfaces, p)
 
-    diffusionlayer = ConstantReservoirDiffusion(
-        domainboundarylayer, initialcondsreservoir, A_surf, layer_thickness
-    )
+		# EXACT CALCULATION METHOD
+		analysis_time = 100
+		co2_rate = abs(sum(rops(ssys, "CO2", analysis_time)))
 
-    interfaces = [inter, diffusionlayer]
+		OCO_rate = abs(sum(rops(ssys, "O=CO", analysis_time)))
 
-    react, y0, p_all = Reactor(
-        (domainboundarylayer, domaincat),
-        (y0boundarylayer, y0cat),
-        (0.0, 1e3),
-        interfaces,
-        (pboundarylayer, pcat, pinter)
-    )
+		CO2HX_rate = 0.0
+		try
+			CO2HX_rate = abs(sum(rops(ssys, "CO2HX", analysis_time)))
+		catch
+			CO2HX_rate = 1e-15
+		end
 
-    sol = solve(react.ode, Sundials.CVODE_BDF(), abstol=1e-22, reltol=1e-8)
+		return [OCO_rate, CO2HX_rate]
 
-    if sol.retcode != :Success
-        return NaN
-    end
-
-    ssys = SystemSimulation(sol, (domainboundarylayer, domaincat), interfaces, p_all)
-
-    # extract formate
-    formate_index = findfirst(==("O=CO"), [s.name for s in ssys.species])
-    return concentrations(ssys, sol.t[end])[formate_index]
+	catch e
+		return [100, 1e-15]
+	end
 end
 
+function run_gsa()
+	bounds = [ [1e-5, 1e-2], [5, 9], [-0.714, -0.514]]
+	param_names = ["CO2_conc", "pH", "surface_potential"]
 
-model_wrapper(x) = run_formate_model(x)
+	# Initialize variables
+	morris_result = nothing
+
+	# Morris
+	println("Running Morris...")
+	try
+		morris_result = GlobalSensitivity.gsa(run_co2_reduction_simulation, GlobalSensitivity.Morris(), bounds; N = 200)
+		println("Morris completed")
+	catch e
+		println("Morris failed: $e")
+	end
+
+	# Results
+	if morris_result !== nothing
+		num_outputs = size(morris_result.means_star, 1)
+		num_params  = size(morris_result.means_star, 2)
+
+		println("\nMorris Results:")
+		for i in 1:num_outputs
+			for j in 1:num_params
+				#println("$(param_names[j]) -> Output $i: μ* = $(round(morris_result.means_star[i,j], digits=4))")
+				println("Output $i  ←  $(param_names[j]) : μ* = $(round(morris_result.means_star[i,j], digits=4))")
+			end
+		end
+	end
+
+	return morris_result
+end
+
+morris_result = run_gsa()
+
+# %%
+# Correct plotting syntax for PythonPlot
+param_labels = ["a", "b", "c"]
+
+# Create Morris signature plot
+scatter(morris_result.means[1, :], morris_result.variances[1, :], s = 100, alpha = 0.7)
+
+# Add labels manually
+for (i, label) in enumerate(param_labels)
+	annotate(label, (morris_result.means[1, i], morris_result.variances[1, i]),
+		xytext = (5, 5), textcoords = "offset points")
+end
+
+xlabel("μ (Mean Effect)")
+ylabel("σ (Standard Deviation)")
+title("Morris Analysis - OCO_rate")
+grid(true, alpha = 0.3)
+gcf()
 
 
 # %%
-# quick test at some baseline:
-baseline_p = [7.0, 0.01, -1.414, 1e-6]
-println("Baseline test [O=CO] = ", run_formate_model(baseline_p), " mol/L")
+# Correct plotting syntax for PythonPlot
+param_labels = ["a", "b", "c"]
+
+# Create Morris signature plot
+scatter(morris_result.means[2, :], morris_result.variances[2, :], s = 100, alpha = 0.7)
+
+# Add labels manually
+for (i, label) in enumerate(param_labels)
+	annotate(label, (morris_result.means[2, i], morris_result.variances[2, i]),
+		xytext = (5, 5), textcoords = "offset points")
+end
+
+xlabel("μ (Mean Effect)")
+ylabel("σ (Standard Deviation)")
+title("Morris Analysis - OCO_rate")
+grid(true, alpha = 0.3)
+gcf()
 
 
 # %%
-bounds
+# Simple readable output for Morris results
+param_names = ["CO2_conc", "pH", "surface_potential"]
 
-# %%
-method = Sobol()
-morris_result = gsa(run_formate_model,
-    method,
-    bounds;
-    samples = 2000,
-    batch=false
-)
-morris_result
-
-# %%
-println(morris_result.means_star)
-println(morris_result.variances)
+println("MORRIS RESULTS FOR OCO_RATE:")
+for (i, param) in enumerate(param_names)
+	mu_star = abs(morris_result.means[1, i])
+	sigma = morris_result.variances[1, i]
+	importance = mu_star > 0.1 ? "HIGH" : (mu_star > 0.01 ? "MEDIUM" : "LOW")
+	println("$param: μ* = $(round(mu_star, digits=6)) ($importance)")
+end
 
 # %%
 # SOBOL GLOBAL SENSITIVITY ANALYSIS
-sobol_samples = 150  
+#   - Output 1: OCO_rate      (O=CO, formate rate)
+#   - Output 2: CO2HX_rate    (CO2HX pathway)
 
-sobol_result = gsa(model_wrapper,
-    Sobol(),
-    lb,
-    ub;
-    samples = sobol_samples
-)
+function run_sobol_gsa()
+    bounds = [[1e-5, 1e-2],      # CO2_conc (mol/L)
+        [5.0, 9.0],        # pH
+        [-0.714, -0.514]   # surface_potential (V)
+    ]
+    param_names  = ["CO2_conc", "pH", "surface_potential"]
+    output_names = ["OCO_rate (O=CO)", "CO2HX_rate"]
 
-println("\nSobol S1 (first-order indices):")
-println(sobol_result.S1)
+    # store results for each output
+    sobol_results = Vector{Any}(undef, length(output_names))
 
-println("\nSobol ST (total-order indices):")
-println(sobol_result.ST)
+    # For reproducibility
+    Random.seed!(1234)
 
-# %%
-# Create bounds matrix (num_params × 2)
-bounds = hcat(lb, ub)
+    # How many base samples (Sobol will do multiple model evaluations)
+    nsamples = 32  
 
-# Correct Morris structure for your version
-morris_method = Morris(
-    p_steps = [6],         # discretization levels (vector)
-    relative_scale = true,
-    num_trajectory = 20    # scalar
-)
+    println("Running Sobol GSA for each output")
 
-morris_result = gsa(model_wrapper, method::Morris,
-    morris_method,
-    bounds;
-    samples = 50
-    batch = false
-)
+    for k in 1:length(output_names)
+        println("\n Sobol for output $k: $(output_names[k])")
 
-mu_star = morris_result.means_star
-sigma2  = morris_result.variances
+        # Wrap the model: scalar output = kth component
+        model_k(x) = run_co2_reduction_simulation(x)[k]
 
-println("\nMorris μ* (importance): ", mu_star)
-println("\nMorris σ² (nonlinearity / interaction): ", sigma2)
+        # Run Sobol
+        sobol_k = GlobalSensitivity.gsa(model_k,
+            GlobalSensitivity.Sobol(),
+            bounds;
+            samples = nsamples
+        )
 
+        sobol_results[k] = sobol_k
 
-# %%
-# plot Morris μ*
-clf()
-bar(param_labels, mu_star)
-ylabel("Morris μ*")
-title("Formate (O=CO) – Morris Mean Elementary Effect")
-tight_layout()
-gcf()
+        # Extract indices
+        S1 = sobol_k.S1      # first-order
+        ST = sobol_k.ST      # total-order
+        S2 = sobol_k.S2      # second-order (interactions)
 
+        println("First-order S1:")
+        for j in 1:length(param_names)
+            println("  $(param_names[j]) : S1 = $(round(S1[j], digits=4))")
+        end
 
-# %%
-# plot Morris σ²
-clf()
-bar(param_labels, sigma2)
-ylabel("Morris σ²")
-title("Formate (O=CO) – Morris Variance of Elementary Effects")
-tight_layout()
-gcf()
+        println("\nTotal-order ST:")
+        for j in 1:length(param_names)
+            println("  $(param_names[j]) : ST = $(round(ST[j], digits=4))")
+        end
 
-# %%
-# SOBOL GLOBAL SENSITIVITY ANALYSIS
-println("\n Running Sobol sensitivity analysis")
+        # Plots for this output
+        # Bar plot: S1
+        clf()
+        bar(1:length(param_names), S1)
+        xticks(1:length(param_names), param_names, rotation=45, ha="right")
+        ylabel("S1")
+        title("Sobol S1 for $(output_names[k])")
+        tight_layout()
+        gcf()
 
-sobol_samples = 150  
+        # Bar plot: ST
+        clf()
+        bar(1:length(param_names), ST)
+        xticks(1:length(param_names), param_names, rotation=45, ha="right")
+        ylabel("ST")
+        title("Sobol ST for $(output_names[k])")
+        tight_layout()
+        gcf()
 
-sobol_result = gsa(
-    model_wrapper,
-    Sobol(),
-    lb,
-    ub;
-    samples = sobol_samples
-)
+        # Heatmap: S2 (second-order interactions)
+        S2_plot = copy(S2)
+        # Optionally zero diagonal so we see only cross-interactions
+        for i in 1:size(S2_plot, 1)
+            S2_plot[i, i] = 0.0
+        end
 
-println("\nSobol S1 (first-order indices):")
-println(sobol_result.S1)
-
-println("\nSobol ST (total-order indices):")
-println(sobol_result.ST)
-
-# %%
-# plot Sobol S1
-clf()
-bar(param_labels, sobol_result.S1)
-ylabel("Sobol S1")
-title("Formate (O=CO) – Sobol First-order Sensitivity")
-tight_layout()
-gcf()
-
-# %%
-# plot Sobol ST 
-clf()
-bar(param_labels, sobol_result.ST)
-ylabel("Sobol ST")
-title("Formate (O=CO) – Sobol Total Sensitivity")
-tight_layout()
-gcf()
-
-# %%
-#Model function that:
-#  - takes pH, CO2 molarity (mol/L), applied potential Phi (V)
-#  - builds domains and interfaces
-#  - runs RMS simulation
-#  - returns boundary-layer O=CO concentration at final time (mol/m^3)
-function run_model_formate(pH, co2_molarity, phi_applied)
-    #### 1. Convert pH and CO2 molarity to concentrations (mol/m^3)
-    C_proton_new = 10.0^(-pH) * 1000.0    # mol/m^3
-    C_co2_new    = co2_molarity * 1000.0  # mol/m^3
-
-    #### 2. Define initial conditions for boundary layer and reservoir
-    initialcondsboundarylayer = Dict(
-        "proton" => C_proton_new * V_bl,
-        "CO2"    => C_co2_new * V_bl,
-        "V"      => V_bl,
-        "T"      => 300.0,
-        "Phi"    => 0.0,
-        "d"      => 0.0
-    )
-
-    initialcondsreservoir_local = Dict(
-        "proton" => C_proton_new,
-        "CO2"    => C_co2_new,
-        "V"      => V_res,
-        "T"      => 300.0
-    )
-
-    #### 3. Surface initial conditions (use same site split as before, variable Phi)
-    initialcondssurf = Dict(
-        "CO2X"    => 0.1 * sites,
-        "vacantX" => 0.9 * sites,
-        "A"       => A_surf,
-        "T"       => 300.0,
-        "Phi"     => phi_applied
-    )
-
-    #### 4. Construct domains for this parameter set
-    domainboundarylayer_local, y0bl, pbl =
-        ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
-
-    domaincat_local, y0cat, pcat =
-        ConstantTAPhiDomain(phase=surf, initialconds=initialcondssurf)
-
-    # Maintain your proton diffusivity modification
-    domainboundarylayer_local.diffusivity[6] = 0.932e-8
-
-    #### 5. Interfaces (reaction + diffusion)
-    inter_local, pinter =
-        ReactiveInternalInterfaceConstantTPhi(domainboundarylayer_local,
-                                              domaincat_local,
-                                              interfacerxns,
-                                              298.15,
-                                              A_surf)
-
-    diffusionlayer_local =
-        ConstantReservoirDiffusion(domainboundarylayer_local,
-                                   initialcondsreservoir_local,
-                                   A_surf,
-                                   layer_thickness)
-
-    interfaces_local = [inter_local, diffusionlayer_local]
-
-    #### 6. Build reactor and solve
-    reactor_local, y0_local, p_local =
-        Reactor((domainboundarylayer_local, domaincat_local),
-                (y0bl, y0cat),
-                (0.0, 1e3),
-                interfaces_local,
-                (pbl, pcat, pinter))
-
-    sol_local = solve(reactor_local.ode,
-                      Sundials.CVODE_BDF();
-                      abstol=1e-22,
-                      reltol=1e-8)
-
-    # If solver fails, return NaN (so GSA can still proceed)
-    if sol_local.retcode != :Success
-        @warn "Simulation failed for pH = $pH, CO2 = $co2_molarity, Φ = $phi_applied; retcode = $(sol_local.retcode)"
-        return NaN
+        clf()
+        imshow(
+            S2_plot,
+            origin="lower",
+            extent=(0.5, length(param_names)+0.5, 0.5, length(param_names)+0.5),
+            aspect="equal"
+        )
+        colorbar()
+        xticks(1:length(param_names), param_names, rotation=45, ha="right")
+        yticks(1:length(param_names), param_names)
+        title("Sobol S2 interactions for $(output_names[k])")
+        tight_layout()
+        gcf()
     end
 
-    #### 7. Wrap as SystemSimulation
-    ssys_local = SystemSimulation(sol_local,
-                                  (domainboundarylayer_local, domaincat_local),
-                                  interfaces_local,
-                                  p_local)
-
-    #### 8. Extract boundary-layer O=CO concentration at final time
-    t_final = sol_local.t[end]
-    concs_bl = concentrations(ssys_local.sims[1], t_final)  # boundary-layer
-
-    species_names_bl = [s.name for s in ssys_local.sims[1].domain.phase.species]
-    idx_formate = findfirst(==("O=CO"), species_names_bl)
-
-    if idx_formate === nothing
-        @warn "Species O=CO not found in boundary-layer species list."
-        return NaN
-    end
-
-    # Return O=CO concentration in boundary layer (mol/m^3)
-    return concs_bl[idx_formate]
+    return sobol_results
 end
 
-# WRAPPER FOR GLOBALSENSITIVITY
-# GlobalSensitivity expects a function f(x::Vector)
-model_simulation(x) = run_model_formate(x[1], x[2], x[3])
-
-# PARAMETER BOUNDS
-#   x1 = pH               ∈ [4, 8]
-#   x2 = CO2 molarity     ∈ [0.005, 0.05] mol/L
-#   x3 = applied potential∈ [-1.6, -0.6] V vs RHE (for example)
-lb = [4.0,   0.005, -1.6]   # lower bounds
-ub = [8.0,   0.050, -0.6]   # upper bounds
-
-# MORRIS METHOD (SCREENING)
-# samples here is number of model evaluations (approx);
-# Morris is cheaper, but still runs many simulations.
-morris_samples = 40
-
-morris_result = gsa(model_wrapper,
-                    Morris(),
-                    lb,
-                    ub;
-                    samples = morris_samples)
-
-println("\n MORRIS RESULTS (Formate O=CO)")
-println("mu*    (mean absolute elementary effect): ", morris_result.mu_star)
-println("sigma  (standard deviation of effects):   ", morris_result.sigma)
-
+# Call it:
+sobol_results = run_sobol_gsa()
 
 # %%
 # Plot Morris μ*
