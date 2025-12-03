@@ -241,18 +241,12 @@ gcf()
 # %%
 
 # %%
-
-# %%
-
-# %%
 using PythonPlot
 using DifferentialEquations
 using Sundials
 using SciMLBase
 using QuadGK
 using DataFrames
-using GlobalSensitivity
-using Random
 using Statistics
 
 function run_co2_reduction_simulation(params::Vector{Float64})
@@ -332,65 +326,58 @@ function run_co2_reduction_simulation(params::Vector{Float64})
 		@time sol = solve(react.ode, Sundials.CVODE_BDF(), abstol = 1e-20, reltol = 1e-8)
 
 		if sol.retcode != :Success
-			return [1e-15, 1e-15, 0.001, 0]
+			return 1e-15
 		end
 
 		ssys = SystemSimulation(sol, (domainboundarylayer, domaincat), interfaces, p)
 
 		# EXACT CALCULATION METHOD
 		analysis_time = 100
-		co2_rate = abs(sum(rops(ssys, "CO2", analysis_time)))
-
 		OCO_rate = abs(sum(rops(ssys, "O=CO", analysis_time)))
-
-		CO2HX_rate = 0.0
-		try
-			CO2HX_rate = abs(sum(rops(ssys, "CO2HX", analysis_time)))
-		catch
-			CO2HX_rate = 1e-15
-		end
-
-		return [OCO_rate, CO2HX_rate]
+		
+		return OCO_rate
 
 	catch e
-		return [100, 1e-15]
+		return 1e-15
 	end
 end
 
-function run_gsa()
-	bounds = [[1e-5, 1e-2], [5, 9], [-0.714, -0.514]]
-	param_names = ["CO2_conc", "pH", "surface_potential"]
 
-	# Initialize variables
-	morris_result = nothing
 
-	# Morris
-	println("Running Morris...")
-	try
-		morris_result = GlobalSensitivity.gsa(run_co2_reduction_simulation, GlobalSensitivity.Morris(), bounds; N = 200)
-		println("Morris completed")
-	catch e
-		println("Morris failed: $e")
-	end
+# %%
+using GlobalSensitivity
+bounds = [
+    [1e-5,   1e-2],      # CO2 concentration (mol/L)
+    [5.0,    9.0],       # pH
+    [-0.714, -0.514]     # Potential (V)
+]
 
-	# Results
-	if morris_result !== nothing
-		num_outputs = size(morris_result.means_star, 1)
-		num_params  = size(morris_result.means_star, 2)
+param_names = ["CO₂_conc", "pH", "potential"]
 
-		println("\nMorris Results:")
-		for i in 1:num_outputs
-			for j in 1:num_params
-				#println("$(param_names[j]) -> Output $i: μ* = $(round(morris_result.means_star[i,j], digits=4))")
-				println("Output $i  ←  $(param_names[j]) : μ* = $(round(morris_result.means_star[i,j], digits=4))")
-			end
-		end
-	end
+morris_method = Morris(
+    p_steps = fill(4, 3),       # 4 levels, 3 parameters
+    relative_scale = true,
+    num_trajectory = 50,
+    total_num_trajectory = 50,
+    len_design_mat = 10
+)
 
-	return morris_result
-end
+println("Running Morris Global Sensitivity Analysis...")
 
-morris_result = run_gsa()
+morris_result = gsa(
+    run_co2_reduction_simulation,
+    morris_method,
+    bounds;
+    batch = false
+)
+
+
+# %%
+miu_star = morris_result.means_star  
+var     = morris_result.variances   
+
+println("μ* (importance): ", miu_star)
+println("σ² (nonlinearity/interaction): ", var)
 
 # %%
 morris_result.means
@@ -500,9 +487,6 @@ title("Morris Analysis - OCO_rate")
 grid(true, alpha = 0.3)
 gcf()
 
-
-# %%
-m = gsa(f1, Sobol(), [[1, 5], [1, 5], [1, 5], [1, 5]], samples = 1000)
 
 # %%
 samples = 32
