@@ -7,12 +7,17 @@
 #       extension: .jl
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Julia rmg_env3 1.10
+#     display_name: Julia 1.10.9
 #     language: julia
-#     name: julia-rmg_env3-1.10
+#     name: julia-1.10
 # ---
+
+# %% [markdown]
+# # With global sensitivity analysis
+
+# %%
 
 # %%
 using Pkg
@@ -30,13 +35,16 @@ using GlobalSensitivity
 using Random
 using Statistics
 
+
+# %%
+
 function run_co2_reduction_simulation(params::Vector{Float64})
 	try
 		CO2_M = params[1]
 		pH = params[2]
 		surface_phi = params[3]
 
-		rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
+		rms_file = "../Ag_C2_042925.rms"
 
 		outdict = readinput(rms_file)
 		boundarylayerspcs = outdict["gas"]["Species"]
@@ -52,16 +60,15 @@ function run_co2_reduction_simulation(params::Vector{Float64})
 		surf = IdealSurface(surfspcs, surfrxns, sitedensity, name = "surface")
 
 
-    C_proton = 10.0^(-pH) * 1e3         # mol/m³
-    C_co2    = CO2_M * 1e3              # mol/m³
-    C_default = 1e-12
-    V_res   = 1e3
+		C_proton = 10.0^(-pH) * 1e3         # mol/m³
+		C_co2    = CO2_M * 1e3              # mol/m³
+		C_default = 1e-12
+		V_res   = 1e3
 		layer_thickness = 1e-6;
-    AVratio = 36.0
-    A_surf  = V_res * AVratio
-    V_bl    = A_surf * layer_thickness
-    sites   = sitedensity * A_surf
-		
+		AVratio = 36.0
+		A_surf  = V_res * AVratio
+		V_bl    = A_surf * layer_thickness
+		sites   = sitedensity * A_surf
 
 		initialcondsboundarylayer = Dict([
 			"proton" => C_proton * V_bl,
@@ -125,6 +132,9 @@ function run_co2_reduction_simulation(params::Vector{Float64})
 		return [100]
 	end
 end
+
+
+# %%
 
 function run_gsa()
 	bounds = [ [1e-5, 1e-2], [5, 9], [-0.714, -0.514]]
