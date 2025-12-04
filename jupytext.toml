@@ -1,0 +1,2 @@
+# Pair ipynb notebooks to jl
+formats = "ipynb,jl"
