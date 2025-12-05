@@ -4288,13 +4288,13 @@ Reactions:
 - comment: 'Volmer. Made up by Richard.
 A = kB / h /  concentration to get units right.
 n = 1 so that overall the A = k_B * T / H
-Ea = 0.4205 eV for Ag from Table 1 of Yang 2024
+Ea = 0.9795 eV for Ag from Table 1 of Yang 2024
 assume DeltaS+ = 0
 q = 0.5'
   electronchange: 1
   kinetics:
-    A: 1e13
-    Ea: 40571.9425
+    A: 2.084e10
+    Ea: 94507.0575 
     n: 1.0
     q: 0.5
     V0: -0.559
@@ -4309,13 +4309,13 @@ q = 0.5'
 - comment: 'Heyrovsky. Made up by Richard.
 A = kB / h /  concentration to get units right.
 n = 1 so that overall the A = k_B * T / H
-Ea = 0.9795 eV for Ag from Table 1 of Yang 2024
+Ea = 0.4205 eV for Ag from Table 1 of Yang 2024
 assume DeltaS+ = 0
 q = 0.5'
   electronchange: 1
   kinetics:
-    A: 1e13
-    Ea: 94507.0575
+    A: 2.084e10
+    Ea: 40571.9425
     n: 1.0
     q: 0.5
     V0: 0.559
