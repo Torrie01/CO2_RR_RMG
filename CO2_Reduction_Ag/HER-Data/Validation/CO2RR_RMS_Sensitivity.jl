@@ -18,11 +18,8 @@
 # # With global sensitivity analysis
 
 # %%
-
-# %%
 using Pkg
-Pkg.activate(ENV["PYTHON_JULIAPKG_PROJECT"])
-using ReactionMechanismSimulator
+Pkg.activate(joinpath(@__DIR__, "..","..",".."))
 
 # %%
 using PythonPlot
@@ -35,6 +32,9 @@ using GlobalSensitivity
 using Random
 using Statistics
 
+
+# %%
+using ReactionMechanismSimulator
 
 # %%
 
