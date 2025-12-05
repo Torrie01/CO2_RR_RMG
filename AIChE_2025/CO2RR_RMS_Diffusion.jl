@@ -7,17 +7,20 @@
 #       extension: .jl
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Julia 1.10.10
+#     display_name: Julia 1.10.9
 #     language: julia
 #     name: julia-1.10
 # ---
 
+# %% [markdown]
+# # Simulation with Diffusion Layer
+#
+
 # %%
 using Pkg
-Pkg.activate(ENV["PYTHON_JULIAPKG_PROJECT"])
-using ReactionMechanismSimulator
+Pkg.activate(joinpath(@__DIR__, ".."))
 
 # %%
 using PythonPlot
@@ -28,7 +31,10 @@ using QuadGK
 using CSV, DataFrames
 
 # %%
-outdict = readinput("Ag_C2_042925.rms")
+using ReactionMechanismSimulator
+
+# %%
+outdict = readinput("Cu_C2_042925.rms")
 
 # %%
 boundarylayerspcs = outdict["gas"]["Species"]
@@ -431,3 +437,5 @@ xlim(1e-12, 1e3)
 ylim(1e-6, 5)
 title("Surface Mole Fractions vs. Time on Ag111@-1.0V")
 gcf()
+
+# %%
