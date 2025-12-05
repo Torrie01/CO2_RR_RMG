@@ -34,10 +34,13 @@ Pkg.add(["PythonPlot",
          "DataFrames",
          "Random",
          "Statistics",
+         "GlobalSensitivity",
          ])
 
 
 # %%
+# This clears the compiled cache and forces a rebuild of all packages.
+# Only run this if your cache is messed up.
 using Pkg
 # Clear compiled cache
 rm(joinpath(first(DEPOT_PATH), "compiled"), recursive=true, force=true)
