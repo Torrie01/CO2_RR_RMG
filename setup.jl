@@ -20,18 +20,22 @@
 
 # %%
 using Pkg
-Pkg.activate(ENV["PYTHON_JULIAPKG_PROJECT"])
+Pkg.activate(@__DIR__)
 
-# %%
-Pkg.add("PythonPlot")
-Pkg.add("GlobalSensitivity")
-Pkg.add("DifferentialEquations")
-Pkg.add("Sundials")
-Pkg.add("SciMLBase")
-Pkg.add("QuadGK")
-Pkg.add("DataFrames")
-Pkg.add("Random")
-Pkg.add("Statistics")
+# This creates the Project.toml and adds things to it.
+# Not needed if you track the Project.toml file.
+Pkg.develop(path="../ReactionMechanismSimulator.jl")
+Pkg.add(["PythonPlot", 
+         "DifferentialEquations", 
+         "Sundials", 
+         "SciMLBase",
+         "QuadGK", 
+         "CSV", 
+         "DataFrames",
+         "Random",
+         "Statistics",
+         ])
+
 
 # %%
 using Pkg
@@ -52,6 +56,5 @@ using GlobalSensitivity
 using Random
 using Statistics
 
-using ReactionMechanismSimulator
-
 # %%
+using ReactionMechanismSimulator
