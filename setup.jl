@@ -26,6 +26,20 @@ Pkg.activate(ENV["PYTHON_JULIAPKG_PROJECT"])
 Pkg.add("PythonPlot")
 Pkg.add("GlobalSensitivity")
 Pkg.add("DifferentialEquations")
+Pkg.add("Sundials")
+Pkg.add("SciMLBase")
+Pkg.add("QuadGK")
+Pkg.add("DataFrames")
+Pkg.add("Random")
+Pkg.add("Statistics")
+
+# %%
+using Pkg
+# Clear compiled cache
+rm(joinpath(first(DEPOT_PATH), "compiled"), recursive=true, force=true)
+# Force rebuild
+Pkg.build()
+Pkg.precompile()
 
 # %%
 using PythonPlot
