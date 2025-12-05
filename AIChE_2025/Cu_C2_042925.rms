@@ -3970,6 +3970,49 @@ Phases:
     type: Species
   name: surface
 Reactions:
+- comment: 'Volmer. Made up by Richard.
+A = kB / h /  concentration to get units right.
+n = 1 so that overall the A = k_B * T / H
+Ea = 0.825 eV for Cu from Table 1 of Yang 2024
+assume DeltaS+ = 0
+q = 0.5'
+  electronchange: 1
+  kinetics:
+    A: 2.084e10
+    Ea: 79600.125 
+    n: 1.0
+    q: 0.5
+    V0: -0.250
+    type: Arrheniusq
+  products:
+  - HX
+  radicalchange: 0
+  reactants:
+  - proton
+  - vacantX
+  type: ElementaryReaction
+- comment: 'Heyrovsky. Made up by Richard.
+A = kB / h /  concentration to get units right.
+n = 1 so that overall the A = k_B * T / H
+Ea = 0.575 eV for Cu from Table 1 of Yang 2024
+assume DeltaS+ = 0
+q = 0.5'
+  electronchange: 1
+  kinetics:
+    A: 2.084e10
+    Ea: 55478.875
+    n: 1.0
+    q: 0.5
+    V0: 0.250
+    type: Arrheniusq
+  products:
+  - H2
+  - vacantX
+  radicalchange: 0
+  reactants:
+  - HX
+  - proton
+  type: ElementaryReaction
 - comment: ''
   electronchange: 0
   kinetics:
