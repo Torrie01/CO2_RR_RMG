@@ -2,24 +2,21 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,jl:percent
 #     text_representation:
 #       extension: .jl
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.17.2
 #   kernelspec:
-#     display_name: Julia 1.10.9
+#     display_name: Julia rmg_env3 1.10
 #     language: julia
-#     name: julia-1.10
+#     name: julia-rmg_env3-1.10
 # ---
-
-# %% [markdown]
-# # With global sensitivity analysis
 
 # %%
 using Pkg
-Pkg.activate(joinpath(@__DIR__, "..","..",".."))
+Pkg.activate(ENV["PYTHON_JULIAPKG_PROJECT"])
+using ReactionMechanismSimulator
 
 # %%
 using PythonPlot
@@ -28,23 +25,479 @@ using Sundials
 using SciMLBase
 using QuadGK
 using DataFrames
-using GlobalSensitivity
-using Random
 using Statistics
 
+function run_co2_reduction_simulation1(params::Vector{Float64})
+    try
+        CO2_M          = params[1]
+        pH             = params[2]
+        surface_phi    = params[3]
+        layer_thickness = params[4]
+        CO2_X_init     = params[5]
+
+        # Basic validity checks
+        if CO2_X_init < 0.0 || CO2_X_init > 1.0
+            error("Invalid CO2 surface coverage")
+        end
+        if layer_thickness <= 0.0
+            error("Invalid BL thickness")
+        end
+
+        rms_file = "/home/danieltori/CO2_RR_RMG/AIChE_2025/Cu_C2_042925.rms"
+        outdict = readinput(rms_file)
+
+        boundarylayerspcs = outdict["gas"]["Species"]
+        boundarylayerrxns = outdict["gas"]["Reactions"]
+        surfspcs          = outdict["surface"]["Species"]
+        surfrxns          = outdict["surface"]["Reactions"]
+        interfacerxns     = outdict[Set(["surface", "gas"])]["Reactions"]
+        solv              = outdict["Solvents"][1]
+
+        sitedensity = 2.943e-5  # Cu111
+        boundarylayer = IdealDiluteSolution(boundarylayerspcs, boundarylayerrxns, solv;
+                                            name="boundarylayeruid", diffusionlimited=true)
+        surf = IdealSurface(surfspcs, surfrxns, sitedensity; name="surface")
+
+        C_proton = 10.0^(-pH) * 1e3
+        C_co2    = CO2_M * 1e3
+        V_res    = 1e3
+        AVratio  = 36.0
+        A_surf   = V_res * AVratio
+        V_bl     = A_surf * layer_thickness
+        sites    = sitedensity * A_surf
+
+        initialcondsboundarylayer = Dict(
+            "proton" => C_proton * V_bl,
+            "CO2"    => C_co2 * V_bl,
+            "V"      => V_bl,
+            "T"      => 300.0,
+            "Phi"    => 0.0,
+            "d"      => 0.0
+        )
+
+        initialcondsreservoir = Dict(
+            "proton" => C_proton,
+            "CO2"    => C_co2,
+            "V"      => V_res,
+            "T"      => 300.0
+        )
+
+        initialcondssurf = Dict(
+            "CO2X"    => CO2_X_init * sites,
+            "vacantX" => (1 - CO2_X_init) * sites,
+            "A"       => A_surf,
+            "T"       => 300.0,
+            "Phi"     => surface_phi
+        )
+
+        domainBL, y0BL, pBL = ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
+        domainCAT, y0CAT, pCAT = ConstantTAPhiDomain(phase=surf, initialconds=initialcondssurf)
+
+        inter, pinter = ReactiveInternalInterfaceConstantTPhi(domainBL, domainCAT, interfacerxns, 298.15, A_surf)
+        difflayer = ConstantReservoirDiffusion(domainBL, initialcondsreservoir, A_surf, layer_thickness)
+
+        interfaces = [inter, difflayer]
+
+        react, y0, p = Reactor(
+            (domainBL, domainCAT),
+            (y0BL, y0CAT),
+            (0.0, 1e3),
+            interfaces,
+            (pBL, pCAT, pinter)
+        )
+
+        sol = solve(react.ode, Sundials.CVODE_BDF(); abstol=1e-20, reltol=1e-8)
+
+        if sol.retcode != :Success
+            error("CVODE failure")
+        end
+
+        ssys = SystemSimulation(sol, (domainBL, domainCAT), interfaces, p)
+
+        analysis_time = 100.0
+        OCO_rate = abs(sum(rops(ssys, "O=CO", analysis_time)))
+
+        return OCO_rate
+
+    catch e
+        return log10(1e-12 + sum(abs.(params)))
+    end
+end
+
 
 # %%
-using ReactionMechanismSimulator
+# MORRIS 
+using GlobalSensitivity
+
+bounds = [
+    [1e-5,   1e-2], 
+    [5.0,    9.0],
+    [-0.714, -0.514],
+    [1e-6,   1e-4],
+    [0.5,    0.9]
+]
+
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+morris_method = Morris(
+    p_steps = fill(4, 5),
+    relative_scale = true,
+    num_trajectory = 40,
+    total_num_trajectory = 40,
+    len_design_mat = 10
+)
+
+println("Running Morris Screening...")
+
+morris_resultx = gsa(
+    run_co2_reduction_simulation1,
+    morris_method,
+    bounds;
+    batch=false
+)
+
 
 # %%
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+# Extract Morris outputs
+Mu      = morris_resultx.means[1, :]        # signed mean effects
+Mu_star = morris_resultx.means_star[1, :]   # absolute mean effects
+Sigma  = morris_resultx.variances[1, :]    # variance
+
+println("μ values = ", Mu)
+println("μ* values = ", Mu_star)
+println("σ² values = ", Sigma)
+
+
+# %%
+# Extract Morris results  (formate / O=CO)
+xs = morris_resultx.means_star[1, :]   # absolute mean effects
+ys = morris_resultx.variances[1, :]    # variance
+
+
+param_labels = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]   
+
+# SCATTER PLOT
+clf()
+scatter(xs, ys, color="blue", s=120)
+
+# LABEL EACH POINT
+for i in 1:length(xs)
+    text(xs[i], ys[i], "  $(param_labels[i])",
+         fontsize=12, ha="left", va="bottom")
+end
+
+xlabel("μ* (Mean Elementary Effect)")
+ylabel("σ² (Variance → nonlinearity / interaction)")
+title("Morris Screening — Formate Production")
+grid(true)
+gcf()
+
+
+# %%
+using GlobalSensitivity
+
+function batch_model(P::Matrix{Float64})
+    n = size(P, 2)
+    out = zeros(n)
+    for i in 1:n
+        out[i] = run_co2_reduction_simulation1(P[:, i])
+    end
+    return out
+end
+
+println("Running Sobol Sensitivity Analysis...")
+
+sobol_resultx = gsa(
+    batch_model,
+    Sobol(),
+    bounds;
+    samples = 200,    
+    batch = true
+)
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_resultx.S1[1, :]
+)
+title("First Order Indices O=CO")
+xlabel("Parameters")
+ylabel("S1")
+
+gcf()
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_resultx.ST[1, :]
+)
+title(" Total Order Indices O=CO")
+xlabel("Parameters")
+ylabel("ST")
+
+gcf()
+
+
+# %%
+using PythonPlot
+using DifferentialEquations
+using Sundials
+using SciMLBase
+using QuadGK
+using DataFrames
+using Statistics
+
+function run_co2_reduction_simulation2(params::Vector{Float64})
+    try
+        CO2_M          = params[1]
+        pH             = params[2]
+        surface_phi    = params[3]
+        layer_thickness = params[4]
+        CO2_X_init     = params[5]
+
+        # Basic validity checks
+        if CO2_X_init < 0.0 || CO2_X_init > 1.0
+            error("Invalid CO2 surface coverage")
+        end
+        if layer_thickness <= 0.0
+            error("Invalid BL thickness")
+        end
+
+        rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
+        outdict = readinput(rms_file)
+
+        boundarylayerspcs = outdict["gas"]["Species"]
+        boundarylayerrxns = outdict["gas"]["Reactions"]
+        surfspcs          = outdict["surface"]["Species"]
+        surfrxns          = outdict["surface"]["Reactions"]
+        interfacerxns     = outdict[Set(["surface", "gas"])]["Reactions"]
+        solv              = outdict["Solvents"][1]
+
+        sitedensity = 2.292e-5
+        boundarylayer = IdealDiluteSolution(boundarylayerspcs, boundarylayerrxns, solv;
+                                            name="boundarylayeruid", diffusionlimited=true)
+        surf = IdealSurface(surfspcs, surfrxns, sitedensity; name="surface")
+
+        C_proton = 10.0^(-pH) * 1e3
+        C_co2    = CO2_M * 1e3
+        V_res    = 1e3
+        AVratio  = 36.0
+        A_surf   = V_res * AVratio
+        V_bl     = A_surf * layer_thickness
+        sites    = sitedensity * A_surf
+
+        initialcondsboundarylayer = Dict(
+            "proton" => C_proton * V_bl,
+            "CO2"    => C_co2 * V_bl,
+            "V"      => V_bl,
+            "T"      => 300.0,
+            "Phi"    => 0.0,
+            "d"      => 0.0
+        )
+
+        initialcondsreservoir = Dict(
+            "proton" => C_proton,
+            "CO2"    => C_co2,
+            "V"      => V_res,
+            "T"      => 300.0
+        )
+
+        initialcondssurf = Dict(
+            "CO2X"    => CO2_X_init * sites,
+            "vacantX" => (1 - CO2_X_init) * sites,
+            "A"       => A_surf,
+            "T"       => 300.0,
+            "Phi"     => surface_phi
+        )
+
+        domainBL, y0BL, pBL = ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
+        domainCAT, y0CAT, pCAT = ConstantTAPhiDomain(phase=surf, initialconds=initialcondssurf)
+
+        inter, pinter = ReactiveInternalInterfaceConstantTPhi(domainBL, domainCAT, interfacerxns, 298.15, A_surf)
+        difflayer = ConstantReservoirDiffusion(domainBL, initialcondsreservoir, A_surf, layer_thickness)
+
+        interfaces = [inter, difflayer]
+
+        react, y0, p = Reactor(
+            (domainBL, domainCAT),
+            (y0BL, y0CAT),
+            (0.0, 1e3),
+            interfaces,
+            (pBL, pCAT, pinter)
+        )
+
+        sol = solve(react.ode, Sundials.CVODE_BDF(); abstol=1e-20, reltol=1e-8)
+
+        if sol.retcode != :Success
+            error("CVODE failure")
+        end
+
+        ssys = SystemSimulation(sol, (domainBL, domainCAT), interfaces, p)
+
+        analysis_time = 100.0
+        OCO_rate = abs(sum(rops(ssys, "O=CO", analysis_time)))
+
+        return OCO_rate
+
+    catch e
+        return log10(1e-12 + sum(abs.(params)))
+    end
+end
+
+
+# %%
+# MORRIS 
+using GlobalSensitivity
+
+bounds = [
+    [1e-5,   1e-2], 
+    [5.0,    9.0],
+    [-0.714, -0.514],
+    [1e-6,   1e-4],
+    [0.5,    0.9]
+]
+
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+morris_method = Morris(
+    p_steps = fill(4, 5),
+    relative_scale = true,
+    num_trajectory = 40,
+    total_num_trajectory = 40,
+    len_design_mat = 10
+)
+
+println("Running Morris Screening...")
+
+morris_resulty = gsa(
+    run_co2_reduction_simulation2,
+    morris_method,
+    bounds;
+    batch=false
+)
+
+
+# %%
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+# Extract Morris outputs
+Mu      = morris_resulty.means[1, :]        # signed mean effects
+Mu_star = morris_resulty.means_star[1, :]   # absolute mean effects
+Sigma  = morris_resulty.variances[1, :]    # variance
+
+println("μ values = ", Mu)
+println("μ* values = ", Mu_star)
+println("σ² values = ", Sigma)
+
+
+# %%
+# Extract Morris results  (formate / O=CO)
+xs = morris_resulty.means_star[1, :]   # absolute mean effects
+ys = morris_resulty.variances[1, :]    # variance
+
+
+param_labels = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]   
+
+# SCATTER PLOT
+clf()
+scatter(xs, ys, color="blue", s=120)
+
+# LABEL EACH POINT
+for i in 1:length(xs)
+    text(xs[i], ys[i], "  $(param_labels[i])",
+         fontsize=12, ha="left", va="bottom")
+end
+
+xlabel("μ* (Mean Elementary Effect)")
+ylabel("σ² (Variance → nonlinearity / interaction)")
+title("Morris Screening — Formate Production")
+grid(true)
+gcf()
+
+
+# %%
+using GlobalSensitivity
+
+function batch_model(P::Matrix{Float64})
+    n = size(P, 2)
+    out = zeros(n)
+    for i in 1:n
+        out[i] = run_co2_reduction_simulation2(P[:, i])
+    end
+    return out
+end
+
+println("Running Sobol Sensitivity Analysis...")
+
+sobol_resulty = gsa(
+    batch_model,
+    Sobol(),
+    bounds;
+    samples = 200,    
+    batch = true
+)
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_resulty.S1[1, :]
+)
+title("First Order Indices O=CO")
+xlabel("Parameters")
+ylabel("S1")
+
+gcf()
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_resulty.ST[1, :]
+)
+title(" Total Order Indices O=CO")
+xlabel("Parameters")
+ylabel("ST")
+gcf()
+
+
+# %%
+using PythonPlot
+using DifferentialEquations
+using Sundials
+using SciMLBase
+using QuadGK
+using DataFrames
+using Statistics
 
 function run_co2_reduction_simulation(params::Vector{Float64})
 	try
 		CO2_M = params[1]
 		pH = params[2]
 		surface_phi = params[3]
+		layer_thickness = params[4]
+		CO2_X_init = params[5]
 
-		rms_file = "../Ag_C2_042925.rms"
+		if CO2_X_init < 0.0 || CO2_X_init > 1.0
+        return 1e-15
+    end
+    if layer_thickness <= 0.0
+        return 1e-15
+    end
+
+		rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
 
 		outdict = readinput(rms_file)
 		boundarylayerspcs = outdict["gas"]["Species"]
@@ -60,15 +513,513 @@ function run_co2_reduction_simulation(params::Vector{Float64})
 		surf = IdealSurface(surfspcs, surfrxns, sitedensity, name = "surface")
 
 
-		C_proton = 10.0^(-pH) * 1e3         # mol/m³
-		C_co2    = CO2_M * 1e3              # mol/m³
-		C_default = 1e-12
-		V_res   = 1e3
+    C_proton = 10.0^(-pH) * 1e3         # mol/m³
+    C_co2    = CO2_M * 1e3              # mol/m³
+    C_default = 1e-12
+    V_res   = 1e3
+    AVratio = 36.0
+    A_surf  = V_res * AVratio
+    V_bl    = A_surf * layer_thickness
+    sites   = sitedensity * A_surf
+		
+
+		initialcondsboundarylayer = Dict([
+			"proton" => C_proton * V_bl,
+			"CO2" => C_co2 * V_bl,
+			"V" => V_bl,
+			"T" => 300,
+			"Phi" => 0.0,
+			"d" => 0.0,
+		])
+
+		initialcondsreservoir = Dict([
+			"proton" => C_proton,
+			"CO2" => C_co2,
+			"V" => V_res,
+			"T" => 300,
+		])
+
+		initialcondssurf = Dict([
+			"CO2X" => CO2_X_init * sites,
+			"vacantX" => (1 - CO2_X_init) * sites,
+			"A" => A_surf,
+			"T" => 300,
+			"Phi" => surface_phi,
+		])
+
+		domainboundarylayer, y0boundarylayer, pboundarylayer = ConstantTVDomain(
+			phase = boundarylayer, initialconds = initialcondsboundarylayer)
+		domaincat, y0cat, pcat = ConstantTAPhiDomain(
+			phase = surf, initialconds = initialcondssurf)
+
+		inter, pinter = ReactiveInternalInterfaceConstantTPhi(
+			domainboundarylayer, domaincat, interfacerxns, 298.15, A_surf)
+		diffusionlayer = ConstantReservoirDiffusion(
+			domainboundarylayer, initialcondsreservoir, A_surf, layer_thickness)
+		interfaces = [inter, diffusionlayer]
+
+		@time react, y0, p = Reactor((domainboundarylayer, domaincat),
+			(y0boundarylayer, y0cat),
+			(0.0, 1e3),
+			interfaces,
+			(pboundarylayer, pcat, pinter))
+
+		@time sol = solve(react.ode, Sundials.CVODE_BDF(), abstol = 1e-20, reltol = 1e-8)
+
+		if sol.retcode != :Success
+			return 1e-15
+		end
+
+		ssys = SystemSimulation(sol, (domainboundarylayer, domaincat), interfaces, p)
+
+		# EXACT CALCULATION METHOD
+		analysis_time = 100
+		OCO_rate = abs(sum(rops(ssys, "O=CO", analysis_time)))
+		
+		return OCO_rate
+
+	catch e
+		return 1e-15
+	end
+end
+
+
+
+# %%
+using GlobalSensitivity
+
+bounds = [
+    [1e-5,   1e-2],     # CO2 concentration
+    [5.0,    9.0],      # pH
+    [-0.714, -0.514],   # potential
+    [1e-6,   1e-4],     # layer thickness
+    [0.5,    0.9]       # CO2X surface coverage
+]
+
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+morris_method = Morris(
+    p_steps = fill(4, 5),        
+    relative_scale = true, 
+    num_trajectory = 50,
+    total_num_trajectory = 50,
+    len_design_mat = 10          #
+)
+
+println("Running Morris Global Sensitivity Analysis...")
+
+morris_result = gsa(
+    run_co2_reduction_simulation,
+    morris_method,
+    bounds;
+    batch = false
+)
+
+
+# %%
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+# Extract Morris outputs
+Mu      = morris_result.means[1, :]        # signed mean effects
+Mu_star = morris_result.means_star[1, :]   # absolute mean effects
+Sigma  = morris_result.variances[1, :]    # variance
+
+println("μ values = ", Mu)
+println("μ* values = ", Mu_star)
+println("σ² values = ", Sigma)
+
+
+# %%
+# Extract Morris results  (formate / O=CO)
+xs = morris_result.means_star[1, :]   # absolute mean effects
+ys = morris_result.variances[1, :]    # variance
+
+
+param_labels = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]   
+
+# SCATTER PLOT
+clf()
+scatter(xs, ys, color="blue", s=120)
+
+# LABEL EACH POINT
+for i in 1:length(xs)
+    text(xs[i], ys[i], "  $(param_labels[i])",
+         fontsize=12, ha="left", va="bottom")
+end
+
+xlabel("μ* (Mean Elementary Effect)")
+ylabel("σ² (Variance → nonlinearity / interaction)")
+title("Morris Screening — Formate Production")
+grid(true)
+gcf()
+
+
+# %%
+# MORRIS  sensitivity plot
+plt.figure(figsize=(8,6))
+plt.scatter(Mu_star, sigma, s=120)
+
+for i in 1:length(param_names)
+    plt.annotate(param_names[i],
+                 (Mu_star[i], sigma[i]),
+                 textcoords="offset points",
+                 xytext=(10,5),
+                 ha="left")
+end
+
+plt.xlabel("μ* (Absolute Mean Elementary Effect)")
+plt.ylabel("σ² (Variance of Elementary Effects)")
+plt.title("Morris Sensitivity Plot")
+plt.grid(true)
+plt.show()
+
+
+# %%
+# MU BAR PLOT
+plt = PythonPlot()
+plt.figure(figsize=(8,4))
+plt.bar(param_names, Mu)
+plt.ylabel("μ (Mean Signed Effect)")
+plt.title("Morris Signed Mean Effects")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+
+# %%
+# MU* BAR PLOT
+plt = PythonPlot()
+clf()
+plt.figure(figsize=(8,4))
+plt.bar(param_names, Mu_star)
+plt.ylabel("μ* (Mean Absolute Effect)")
+plt.title("Morris Absolute Mean Effects")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+gcf()
+
+# %%
+# VARIANCE BAR PLOT
+clf()
+plt.figure(figsize=(8,4))
+plt.bar(param_names, sigma)
+plt.ylabel("σ² (Variance)")
+plt.title("Morris Variance (Nonlinearity / Interaction)")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+gcf()
+
+
+# %%
+using GlobalSensitivity
+using Random
+
+println("Running Sobol Global Sensitivity Analysis...")
+
+sobol_result = gsa(run_co2_reduction_simulation, Sobol(), [[1e-5, 1e-2], [5.0, 9.0], [-0.714, -0.514], [1e-6, 1e-4], [0.5, 0.9]], samples = 32, batch = false)
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_result.S1[1, :]
+)
+title("First Order Indices O=CO")
+xlabel("Parameters")
+ylabel("S1")
+
+gcf()
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_result.ST[1, :]
+)
+title("Sobol Total Indices O=CO")
+xlabel("Parameters")
+ylabel("ST")
+
+gcf()
+
+
+# %%
+using PythonPlot
+using DifferentialEquations
+using Sundials
+using SciMLBase
+using QuadGK
+using DataFrames
+using Statistics
+
+function run_co2_reduction_simulation1(params::Vector{Float64})
+    try
+        CO2_M          = params[1]
+        pH             = params[2]
+        surface_phi    = params[3]
+        layer_thickness = params[4]
+        CO2_X_init     = params[5]
+
+        # Basic validity checks
+        if CO2_X_init < 0.0 || CO2_X_init > 1.0
+            error("Invalid CO2 surface coverage")
+        end
+        if layer_thickness <= 0.0
+            error("Invalid BL thickness")
+        end
+
+        rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
+        outdict = readinput(rms_file)
+
+        boundarylayerspcs = outdict["gas"]["Species"]
+        boundarylayerrxns = outdict["gas"]["Reactions"]
+        surfspcs          = outdict["surface"]["Species"]
+        surfrxns          = outdict["surface"]["Reactions"]
+        interfacerxns     = outdict[Set(["surface", "gas"])]["Reactions"]
+        solv              = outdict["Solvents"][1]
+
+        sitedensity = 2.292e-5
+        boundarylayer = IdealDiluteSolution(boundarylayerspcs, boundarylayerrxns, solv;
+                                            name="boundarylayeruid", diffusionlimited=true)
+        surf = IdealSurface(surfspcs, surfrxns, sitedensity; name="surface")
+
+        C_proton = 10.0^(-pH) * 1e3
+        C_co2    = CO2_M * 1e3
+        V_res    = 1e3
+        AVratio  = 36.0
+        A_surf   = V_res * AVratio
+        V_bl     = A_surf * layer_thickness
+        sites    = sitedensity * A_surf
+
+        initialcondsboundarylayer = Dict(
+            "proton" => C_proton * V_bl,
+            "CO2"    => C_co2 * V_bl,
+            "V"      => V_bl,
+            "T"      => 300.0,
+            "Phi"    => 0.0,
+            "d"      => 0.0
+        )
+
+        initialcondsreservoir = Dict(
+            "proton" => C_proton,
+            "CO2"    => C_co2,
+            "V"      => V_res,
+            "T"      => 300.0
+        )
+
+        initialcondssurf = Dict(
+            "CO2X"    => CO2_X_init * sites,
+            "vacantX" => (1 - CO2_X_init) * sites,
+            "A"       => A_surf,
+            "T"       => 300.0,
+            "Phi"     => surface_phi
+        )
+
+        domainBL, y0BL, pBL = ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
+        domainCAT, y0CAT, pCAT = ConstantTAPhiDomain(phase=surf, initialconds=initialcondssurf)
+
+        inter, pinter = ReactiveInternalInterfaceConstantTPhi(domainBL, domainCAT, interfacerxns, 298.15, A_surf)
+        difflayer = ConstantReservoirDiffusion(domainBL, initialcondsreservoir, A_surf, layer_thickness)
+
+        interfaces = [inter, difflayer]
+
+        react, y0, p = Reactor(
+            (domainBL, domainCAT),
+            (y0BL, y0CAT),
+            (0.0, 1e3),
+            interfaces,
+            (pBL, pCAT, pinter)
+        )
+
+        sol = solve(react.ode, Sundials.CVODE_BDF(); abstol=1e-20, reltol=1e-8)
+
+        if sol.retcode != :Success
+            error("CVODE failure")
+        end
+
+        ssys = SystemSimulation(sol, (domainBL, domainCAT), interfaces, p)
+
+        analysis_time = 100.0
+        OCO_rate = abs(sum(rops(ssys, "O=CO", analysis_time)))
+
+        return OCO_rate
+
+    catch e
+        return log10(1e-12 + sum(abs.(params)))
+    end
+end
+
+
+# %%
+# MORRIS 
+using GlobalSensitivity
+
+bounds = [
+    [1e-5,   1e-2], 
+    [5.0,    9.0],
+    [-0.714, -0.514],
+    [1e-6,   1e-4],
+    [0.5,    0.9]
+]
+
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+morris_method = Morris(
+    p_steps = fill(4, 5),
+    relative_scale = true,
+    num_trajectory = 40,
+    total_num_trajectory = 40,
+    len_design_mat = 10
+)
+
+println("Running Morris Screening...")
+
+morris_resultx = gsa(
+    run_co2_reduction_simulation1,
+    morris_method,
+    bounds;
+    batch=false
+)
+
+
+# %%
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+# Extract Morris outputs
+Mu      = morris_resultx.means[1, :]        # signed mean effects
+Mu_star = morris_resultx.means_star[1, :]   # absolute mean effects
+Sigma  = morris_resultx.variances[1, :]    # variance
+
+println("μ values = ", Mu)
+println("μ* values = ", Mu_star)
+println("σ² values = ", Sigma)
+
+
+# %%
+# Extract Morris results  (formate / O=CO)
+xs = morris_resultx.means_star[1, :]   # absolute mean effects
+ys = morris_resultx.variances[1, :]    # variance
+
+
+param_labels = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]   
+
+# SCATTER PLOT
+clf()
+scatter(xs, ys, color="blue", s=120)
+
+# LABEL EACH POINT
+for i in 1:length(xs)
+    text(xs[i], ys[i], "  $(param_labels[i])",
+         fontsize=12, ha="left", va="bottom")
+end
+
+xlabel("μ* (Mean Elementary Effect)")
+ylabel("σ² (Variance → nonlinearity / interaction)")
+title("Morris Screening — Formate Production")
+grid(true)
+gcf()
+
+
+# %%
+using GlobalSensitivity
+
+function batch_model(P::Matrix{Float64})
+    n = size(P, 2)
+    out = zeros(n)
+    for i in 1:n
+        out[i] = run_co2_reduction_simulation1(P[:, i])
+    end
+    return out
+end
+
+println("Running Sobol Sensitivity Analysis...")
+
+sobol_resultx = gsa(
+    batch_model,
+    Sobol(),
+    bounds;
+    samples = 200,    
+    batch = true
+)
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_resultx.S1[1, :]
+)
+title("First Order Indices O=CO")
+xlabel("Parameters")
+ylabel("S1")
+
+gcf()
+
+
+# %%
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    sobol_resultx.ST[1, :]
+)
+title("Total order Indices O=CO")
+xlabel("Parameters")
+ylabel("ST")
+
+gcf()
+
+
+# %%
+
+# %%
+using PythonPlot
+using DifferentialEquations
+using Sundials
+using SciMLBase
+using QuadGK
+using DataFrames
+using GlobalSensitivity
+using Random
+using Statistics
+
+function run_co2_reduction_simulation(params::Vector{Float64})
+	try
+		CO2_M = params[1]
+		pH = params[2]
+		surface_phi = params[3]
+
+		rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
+
+		outdict = readinput(rms_file)
+		boundarylayerspcs = outdict["gas"]["Species"]
+		boundarylayerrxns = outdict["gas"]["Reactions"]
+		surfspcs = outdict["surface"]["Species"]
+		surfrxns = outdict["surface"]["Reactions"]
+		interfacerxns = outdict[Set(["surface", "gas"])]["Reactions"]
+		solv = outdict["Solvents"][1]
+
+		sitedensity = 2.292e-5; #Ag111
+		boundarylayer = IdealDiluteSolution(boundarylayerspcs, boundarylayerrxns, solv,
+			name = "boundarylayeruid", diffusionlimited = true)
+		surf = IdealSurface(surfspcs, surfrxns, sitedensity, name = "surface")
+
+
+    C_proton = 10.0^(-pH) * 1e3         # mol/m³
+    C_co2    = CO2_M * 1e3              # mol/m³
+    C_default = 1e-12
+    V_res   = 1e3
 		layer_thickness = 1e-6;
-		AVratio = 36.0
-		A_surf  = V_res * AVratio
-		V_bl    = A_surf * layer_thickness
-		sites   = sitedensity * A_surf
+    AVratio = 36.0
+    A_surf  = V_res * AVratio
+    V_bl    = A_surf * layer_thickness
+    sites   = sitedensity * A_surf
+		
 
 		initialcondsboundarylayer = Dict([
 			"proton" => C_proton * V_bl,
@@ -132,9 +1083,6 @@ function run_co2_reduction_simulation(params::Vector{Float64})
 		return [100]
 	end
 end
-
-
-# %%
 
 function run_gsa()
 	bounds = [ [1e-5, 1e-2], [5, 9], [-0.714, -0.514]]
@@ -259,12 +1207,186 @@ using QuadGK
 using DataFrames
 using Statistics
 
+
+safe_log10(x) = log10(x + 1e-30)  
+
+function run_co2_reduction_simulation1(params::Vector{Float64})
+    try
+        CO2_M         = params[1]
+        pH            = params[2]
+        surface_phi   = params[3]
+        layer_thickness     = params[4]
+        CO2X_init     = params[5]
+
+        if !(0 < CO2X_init <= 1)
+            return safe_log10(1e-20)
+        end
+        if layer_thickness <= 0
+            return safe_log10(1e-20)
+        end
+
+        rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
+        outdict = readinput(rms_file)
+
+        gas_species   = outdict["gas"]["Species"]
+        gas_rxns      = outdict["gas"]["Reactions"]
+        surf_species  = outdict["surface"]["Species"]
+        surf_rxns     = outdict["surface"]["Reactions"]
+        interface_rxns = outdict[Set(["surface","gas"])]["Reactions"]
+        solv = outdict["Solvents"][1]
+
+        sitedensity = 2.292e-5
+        C_proton = 10.0^(-pH) * 1e3
+        C_co2    = CO2_M * 1e3
+        V_res = 1e3
+        AVratio = 36.0
+        A_surf = V_res * AVratio
+        V_bl   = A_surf * layer_thk
+        sites = sitedensity * A_surf
+
+        boundary = IdealDiluteSolution(gas_species, gas_rxns, solv;
+            name="boundary", diffusionlimited=true)
+
+        surface = IdealSurface(surf_species, surf_rxns, sitedensity;
+            name="surface")
+
+        init_bl = Dict(
+            "proton" => C_proton * V_bl,
+            "CO2"    => C_co2 * V_bl,
+            "V"      => V_bl,
+            "T"      => 300.0,
+            "Phi"    => 0.0,
+            "d"      => 0.0,
+        )
+
+        init_res = Dict(
+            "proton" => C_proton,
+            "CO2"    => C_co2,
+            "V"      => V_res,
+            "T"      => 300.0,
+        )
+
+        init_surf = Dict(
+            "CO2X"    => CO2X_init * sites,
+            "vacantX" => (1 - CO2X_init) * sites,
+            "A"       => A_surf,
+            "T"       => 300.0,
+            "Phi"     => surface_phi,
+        )
+
+        dom_bl, y0_bl, p_bl = ConstantTVDomain(phase=boundary, initialconds=init_bl)
+        dom_s,  y0_s,  p_s  = ConstantTAPhiDomain(phase=surface, initialconds=init_surf)
+
+        inter, p_inter = ReactiveInternalInterfaceConstantTPhi(dom_bl, dom_s, interface_rxns, 298.15, A_surf)
+        diff           = ConstantReservoirDiffusion(dom_bl, init_res, A_surf, layer_thk)
+
+        interfaces = [inter, diff]
+
+        # ------------ Reactor Solve ------------------------
+        react, y0, p = Reactor((dom_bl, dom_s),
+                               (y0_bl, y0_s),
+                               (0.0, 1e3),
+                               interfaces,
+                               (p_bl, p_s, p_inter))
+
+        sol = solve(react.ode, Sundials.CVODE_BDF(); abstol=1e-20, reltol=1e-8, maxiters=1e7)
+
+        if sol.retcode != :Success
+            return safe_log10(1e-20)
+        end
+
+        ssys = SystemSimulation(sol, (dom_bl, dom_s), interfaces, p)
+
+        tₐ = 100.0
+        rate_OCO = try
+            abs(sum(rops(ssys, "O=CO", tₐ)))
+        catch
+            1e-20
+        end
+
+        return safe_log10(rate_OCO)
+
+    catch e
+        @warn "Model exception: $e"
+        return safe_log10(1e-20)
+    end
+end
+
+
+# %%
+# MORRIS 
+using GlobalSensitivity
+
+bounds = [
+    [1e-5,   1e-2], 
+    [5.0,    9.0],
+    [-0.714, -0.514],
+    [1e-6,   1e-4],
+    [0.5,    0.9]
+]
+
+param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
+
+morris_method = Morris(
+    p_steps = fill(4, 5),
+    relative_scale = true,
+    num_trajectory = 40,
+    total_num_trajectory = 40,
+    len_design_mat = 10
+)
+
+println("Running Morris Screening...")
+
+morris_resultx= gsa(
+    run_co2_reduction_simulation,
+    morris_method,
+    bounds;
+    batch=false
+)
+
+
+# %%
+plt = PythonPlot
+
+μs = morris_result.means_star
+σ² = morris_result.variances
+
+plt.figure(figsize=(8,6))
+plt.scatter(μs, σ², s=150, color="blue")
+
+for i in 1:length(param_names)
+    plt.annotate(param_names[i],
+        (μs[i], σ²[i]),
+        textcoords="offset points",
+        xytext=(10, 5)
+    )
+end
+
+plt.xlabel("μ* (importance)")
+plt.ylabel("σ² (nonlinearity / interaction)")
+plt.title("Morris Sensitivity — Formate Production")
+plt.grid(true)
+
+gcf()
+
+
+# %%
+
+# %%
+using PythonPlot
+using DifferentialEquations
+using Sundials
+using SciMLBase
+using QuadGK
+using DataFrames
+using Statistics
+
 function run_co2_reduction_simulation(params::Vector{Float64})
 	try
 		CO2_M = params[1]
 		pH = params[2]
 		surface_phi = params[3]
-
+		
 		rms_file = "/home/danieltori/CO2_RR_RMG/CO2_Reduction_Ag/Ag_C2_042925.rms"
 
 		outdict = readinput(rms_file)
@@ -285,8 +1407,8 @@ function run_co2_reduction_simulation(params::Vector{Float64})
     C_co2    = CO2_M * 1e3              # mol/m³
     C_default = 1e-12
     V_res   = 1e3
-		layer_thickness = 1e-6;
     AVratio = 36.0
+		layer_thickness = 1e-6
     A_surf  = V_res * AVratio
     V_bl    = A_surf * layer_thickness
     sites   = sitedensity * A_surf
