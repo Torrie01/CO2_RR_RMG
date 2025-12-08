@@ -6,7 +6,7 @@
 #       extension: .jl
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Julia rmg_env3 1.10
 #     language: julia
@@ -655,61 +655,47 @@ gcf()
 
 
 # %%
-# MORRIS  sensitivity plot
-plt.figure(figsize=(8,6))
-plt.scatter(Mu_star, sigma, s=120)
-
-for i in 1:length(param_names)
-    plt.annotate(param_names[i],
-                 (Mu_star[i], sigma[i]),
-                 textcoords="offset points",
-                 xytext=(10,5),
-                 ha="left")
-end
-
-plt.xlabel("μ* (Absolute Mean Elementary Effect)")
-plt.ylabel("σ² (Variance of Elementary Effects)")
-plt.title("Morris Sensitivity Plot")
-plt.grid(true)
-plt.show()
-
-
-# %%
 # MU BAR PLOT
-plt = PythonPlot()
-plt.figure(figsize=(8,4))
-plt.bar(param_names, Mu)
-plt.ylabel("μ (Mean Signed Effect)")
-plt.title("Morris Signed Mean Effects")
-plt.xticks(rotation=45, ha="right")
-plt.tight_layout()
-plt.show()
+clf()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    morris_result.means[1, :]
+)
+title("Morris Signed Mean Effects")
+xlabel("Parameters")
+ylabel("Mu")
+
+
+gcf()
+
 
 # %%
 # MU* BAR PLOT
-plt = PythonPlot()
 clf()
-plt.figure(figsize=(8,4))
-plt.bar(param_names, Mu_star)
-plt.ylabel("μ* (Mean Absolute Effect)")
-plt.title("Morris Absolute Mean Effects")
-plt.xticks(rotation=45, ha="right")
-plt.tight_layout()
-plt.show()
+
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    morris_result.means_star[1, :]
+)
+title("Morris Absolute Mean Effects")
+xlabel("Parameters")
+ylabel("μ* (Mean Absolute Effect)")
+
 gcf()
 
 # %%
 # VARIANCE BAR PLOT
 clf()
-plt.figure(figsize=(8,4))
-plt.bar(param_names, sigma)
-plt.ylabel("σ² (Variance)")
-plt.title("Morris Variance (Nonlinearity / Interaction)")
-plt.xticks(rotation=45, ha="right")
-plt.tight_layout()
-plt.show()
-gcf()
 
+bar(
+    ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
+    morris_result.variance[1, :]
+)
+title("Morris Variance (Nonlinearity / Interaction)")
+xlabel("Parameters")
+ylabel("σ² (Variance)")
+gcf()
 
 # %%
 using GlobalSensitivity
