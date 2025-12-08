@@ -31,7 +31,7 @@ function run_co2_reduction_simulation1(params::Vector{Float64})
     try
         CO2_M          = params[1]
         pH             = params[2]
-        surface_phi    = params[3]
+        Phi_RHE        = params[3]
         layer_thickness = params[4]
         CO2_X_init     = params[5]
 
@@ -87,7 +87,7 @@ function run_co2_reduction_simulation1(params::Vector{Float64})
             "vacantX" => (1 - CO2_X_init) * sites,
             "A"       => A_surf,
             "T"       => 300.0,
-            "Phi"     => surface_phi
+            "Phi_SHE"     => Phi_RHE - (0.059 * pH)
         )
 
         domainBL, y0BL, pBL = ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
@@ -131,10 +131,10 @@ using GlobalSensitivity
 
 bounds = [
     [1e-5,   1e-2], 
-    [5.0,    9.0],
-    [-0.714, -0.514],
+    [5.0,     9.0],
+    [-0.3,   -0.1],
     [1e-6,   1e-4],
-    [0.5,    0.9]
+    [0.5,     0.9]
 ]
 
 param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
@@ -259,7 +259,7 @@ function run_co2_reduction_simulation2(params::Vector{Float64})
     try
         CO2_M          = params[1]
         pH             = params[2]
-        surface_phi    = params[3]
+        Phi_RHE        = params[3]
         layer_thickness = params[4]
         CO2_X_init     = params[5]
 
@@ -315,7 +315,7 @@ function run_co2_reduction_simulation2(params::Vector{Float64})
             "vacantX" => (1 - CO2_X_init) * sites,
             "A"       => A_surf,
             "T"       => 300.0,
-            "Phi"     => surface_phi
+            "Phi_SHE"     => Phi_RHE - (0.059 * pH)
         )
 
         domainBL, y0BL, pBL = ConstantTVDomain(phase=boundarylayer, initialconds=initialcondsboundarylayer)
@@ -690,7 +690,7 @@ clf()
 
 bar(
     ["CO2_conc", "pH", "surface_potential", "layer_thickness", "CO2_X_init"],
-    morris_result.variance[1, :]
+    morris_result.variances[1, :]
 )
 title("Morris Variance (Nonlinearity / Interaction)")
 xlabel("Parameters")
