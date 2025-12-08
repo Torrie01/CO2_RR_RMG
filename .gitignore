@@ -1,6 +1,9 @@
 .ipynb_checkpoints
 **/species/*.png
 *:Zone.Identifier
+**/chemkin/*
+**/seed/*
+**/*.jld2
 
 CO2RR_RMS/Cu/CO2RR_Cu.ipynb
 CO2RR_RMS/Ag/CO2RR_RMS.ipynb
