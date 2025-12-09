@@ -142,8 +142,8 @@ param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
 morris_method = Morris(
     p_steps = fill(4, 5),
     relative_scale = true,
-    num_trajectory = 40,
-    total_num_trajectory = 40,
+    num_trajectory = 250,
+    total_num_trajectory = 250,
     len_design_mat = 10
 )
 
@@ -370,8 +370,8 @@ param_names = ["CO₂_conc", "pH", "potential", "layer_thickness", "CO2X_init"]
 morris_method = Morris(
     p_steps = fill(4, 5),
     relative_scale = true,
-    num_trajectory = 40,
-    total_num_trajectory = 40,
+    num_trajectory = 250,
+    total_num_trajectory = 250,
     len_design_mat = 10
 )
 
