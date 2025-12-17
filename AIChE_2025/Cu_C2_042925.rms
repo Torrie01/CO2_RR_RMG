@@ -4015,7 +4015,7 @@ q = 0.5'
   type: ElementaryReaction
 - comment: ''
   electronchange: 0
-  kinetics:Surface_Proton_Electron_Reduction_Beta_Dissociation
+  kinetics:
     A: 0.005
     Ea: 0.0
     n: 0.0
