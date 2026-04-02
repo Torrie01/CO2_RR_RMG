@@ -1,0 +1,195 @@
+Interfaces:
+- {}
+
+Phases:
+- Species:
+  - comment: 'Thermo library corrected for liquid phase: 1/2 free energy of H2(g)Thermo library: electrocatThermo + Solvation correction (H=-8kJ/mol;S=-50J/mol/K) with water as solvent'
+    name: proton
+    radicalelectrons: 0
+    smiles: '[H]'
+    thermo:
+      polys:
+      - Tmax: 4879.79935843716
+        Tmin: 100.0
+        coefs:
+        - 2.500000000525325
+        - -3.0168053118223457e-12
+        - 3.745821408661492e-15
+        - -1.50856878452712e-18
+        - 1.8662647138106804e-22
+        - -1930.1948090075469
+        - -12.33768959784977
+        type: NASApolynomial
+      - Tmax: 5000.0
+        Tmin: 4879.79935843716
+        coefs:
+        - 4.284610711633441
+        - -0.001454946491116745
+        - 4.448043060261492e-07
+        - -6.043596423527559e-11
+        - 3.0792155132960395e-15
+        - -3681.320263314544
+        - -23.785847415392677
+        type: NASApolynomial
+      type: NASA
+    type: Species
+  - comment: 'Thermo library corrected for liquid phase: Thermo library: primaryThermoLibrary + Solvation correction (H=-0kJ/mol;S=-34J/mol/K) with water as solvent'
+    name: H2
+    radicalelectrons: 0
+    smiles: '[H][H]'
+    thermo:
+      polys:
+      - Tmax: 1308.4769957136732
+        Tmin: 100.0
+        coefs:
+        - 3.1652877713396097
+        - 0.0017265364750293753
+        - -3.1638523688596985e-06
+        - 2.59622606273371e-09
+        - -6.950513551828448e-13
+        - -1025.6656680344438
+        - -6.764634180635296
+        type: NASApolynomial
+      - Tmax: 5000.0
+        Tmin: 1308.4769957136732
+        coefs:
+        - 2.868672926127067
+        - 0.0008464097126673043
+        - -1.064789089715918e-07
+        - -5.1673613249200925e-12
+        - 1.3805658189068534e-15
+        - -795.0764057212356
+        - -4.66936874844496
+        type: NASApolynomial
+      type: NASA
+    type: Species
+  name: gas
+- Species:
+  - adjlist: '1 X u0 p0 c0
+      '
+    comment: 'Thermo library corrected for liquid phase: Thermo library: surfaceThermoPt111 + Solvation correction (H=-19kJ/mol;S=-41J/mol/K) with water as solvent'
+    name: vacantX
+    radicalelectrons: 0
+    smiles: '[Pt]'
+    thermo:
+      polys:
+      - Tmax: 1000.0
+        Tmin: 298.0
+        coefs:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - -2336.889221588575
+        - -4.883052104811946
+        type: NASApolynomial
+      - Tmax: 3000.0
+        Tmin: 1000.0
+        coefs:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - -2336.889221588575
+        - -4.883052104811946
+        type: NASApolynomial
+      type: NASA
+    type: Species
+  - adjlist: '1 H u0 p0 c0 {2,S}
+      2 X u0 p0 c0 {1,S}
+      '
+    comment: 'Thermo library corrected for liquid phase: Thermo library: surfaceThermoPt111 + Solvation correction (H=-11kJ/mol;S=-17J/mol/K) with water as solvent'
+    name: HX
+    radicalelectrons: 0
+    smiles: '[PtH]'
+    thermo:
+      polys:
+      - Tmax: 1000.0
+        Tmin: 298.0
+        coefs:
+        - -2.07570125
+        - 0.0173580835
+        - -2.60920784e-05
+        - 1.89282268e-08
+        - -5.38835643e-12
+        - -4461.521392187799
+        - 6.108987451384159
+        type: NASApolynomial
+      - Tmax: 2000.0
+        Tmin: 1000.0
+        coefs:
+        - 2.72248139
+        - -0.00106817206
+        - 1.9865379e-06
+        - -1.12048461e-09
+        - 2.09811636e-13
+        - -5513.570762187799
+        - -17.36537472861584
+        type: NASApolynomial
+      type: NASA
+    type: Species
+  name: surface
+Reactions:
+- comment: 'Volmer. Pt(111)'
+  electronchange: 1
+  kinetics:
+    A: 3.354e10
+    Ea: 58855.85
+    n: 1.0
+    q: 0.5
+    V0: 0.0
+    type: Arrheniusq
+  products:
+  - HX
+  radicalchange: 0
+  reactants:
+  - proton
+  - vacantX
+  type: ElementaryReaction
+- comment: 'Heyrovsky. Pt(111)'
+  electronchange: 1
+  kinetics:
+    A: 3.354e10
+    Ea: 68504.35
+    n: 1.0
+    q: 0.5
+    V0: 0.0
+    type: Arrheniusq
+  products:
+  - H2
+  - vacantX
+  radicalchange: 0
+  reactants:
+  - HX
+  - proton
+  type: ElementaryReaction
+- comment: 'Tafel recombination reaction'
+  electronchange: 0
+  kinetics:
+    A: 3.354e10
+    Ea: 77188
+    n: 1.0
+    type: Arrhenius
+  products:
+  - vacantX
+  - vacantX
+  - H2
+  radicalchange: 0
+  reactants:
+  - HX
+  - HX
+  type: ElementaryReaction
+Solvents:
+- mu:
+    A: -52.843
+    B: 3703.6
+    C: 5.866
+    D: -5.88e-29
+    E: 10.0
+    type: RiedelViscosity
+  name: water
+  type: Solvent
+Units: {}
+
