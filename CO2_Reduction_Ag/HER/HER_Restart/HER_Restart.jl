@@ -273,9 +273,11 @@ for Phi in Phi_values
 
     if !isnan(j_mA_cm2) && abs(j_mA_cm2) > 0 && ssys !== nothing
         # Extract coverage
-        surf_fracs = molefractions(ssys.sims[2])
-        θ_H = surf_fracs[end, HX_idx]
-
+        t_ss = ssys.sims[2].sol.t[end]
+        hx_conc = concentrations(ssys, "HX", t_ss)
+        vac_conc = concentrations(ssys, "vacantX", t_ss)
+        θ_H = hx_conc / (hx_conc + vac_conc)
+       
         push!(overpotential_values, overpotential)
         push!(current_density_values, abs(j_mA_cm2))
         push!(theta_H_values, θ_H)
