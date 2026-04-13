@@ -103,8 +103,8 @@ function run_HER(Phi_SHE; t_end=1e3, pH=0)
 
     # Surface initial conditions
     initialcondssurf = Dict(
-        "HX"      => 0.66 * sites,
-        "vacantX" => 0.34 * sites,
+        "HX"      => 0.11 * sites,
+        "vacantX" => 0.89 * sites,
         "A"       => A_surf,
         "T"       => T,
         "Phi"     => Phi_SHE
@@ -152,6 +152,20 @@ function run_HER(Phi_SHE; t_end=1e3, pH=0)
 
     ssys = SystemSimulation(sol, (domainboundarylayer, domaincat), interfaces, p)
 
+    t0 = sol.t[1]
+    tss = sol.t[end]
+
+    hx0 = concentrations(ssys, "HX", t0)
+    vac0 = concentrations(ssys, "vacantX", t0)
+    theta0 = hx0 / (hx0 + vac0)
+
+    hxss = concentrations(ssys, "HX", tss)
+    vacss = concentrations(ssys, "vacantX", tss)
+    thetass = hxss / (hxss + vacss)
+
+    println("θ_H initial = ", theta0)
+    println("θ_H final   = ", thetass)
+
     # Net rates from the system simulation
     r_all = rates(ssys, sol.t[end])
 
@@ -180,6 +194,15 @@ single = run_HER(phi_test; pH=0, t_end=1e3)
 # %%
 phi_test = 0.0
 single = run_HER(phi_test; pH=0, t_end=1e3)
+
+# %%
+run_HER(0.0; pH=0, t_end=1e-1)
+
+# %%
+run_HER(0.0; pH=0, t_end=1.0)
+
+# %%
+run_HER(0.0; pH=0, t_end=1e-3)
 
 # %%
 # Single-point diagnostic at equilibrium (0 V vs SHE)
@@ -289,7 +312,7 @@ end
 
 # %%
 # TAFEL SLOPE CALCULATION
-tafel_idx = findall(-0.1 .<= overpotential_values .<= 0.0)
+tafel_idx = findall(-0.10 .<= overpotential_values .<= -0.0)
 # tafel_idx = findall(-0.25 .<= overpotential_values .<= -0.10)
 
 tafel_slope = NaN
@@ -428,5 +451,8 @@ ylabel("θ_H")
 title("Hydrogen surface coverage vs time")
 grid(true)
 gcf()
+
+# %%
+run_HER(0.0; pH=0, t_end=1e-5)
 
 # %%
